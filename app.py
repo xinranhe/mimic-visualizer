@@ -318,9 +318,17 @@ if subject_id_input:
                                     event_data["endtime"]
                                 )
                                 for _, row in event_data.iterrows():
+                                    # When the start and end times are within a
+                                    # minute of each other the segment would
+                                    # collapse to a point. Add a small padding to
+                                    # ensure it is visible.
+                                    start_val = row["starttime"]
+                                    end_val = row["endtime"]
+                                    if abs(end_val - start_val) <= pd.Timedelta(minutes=1):
+                                        end_val = start_val + pd.Timedelta(minutes=1)
                                     fig.add_trace(
                                         go.Scatter(
-                                            x=[row["starttime"], row["endtime"]],
+                                            x=[start_val, end_val],
                                             y=[item["label"], item["label"]],
                                             mode="lines",
                                             line=dict(width=10),
