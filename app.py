@@ -126,17 +126,46 @@ if subject_id_input:
                 st.header("Available ICU Data Items")
                 item_types = get_item_types(subject_id, selected_hadm_id)
                 if not item_types.empty:
-                    filter_text = st.text_input(
-                        "Filter items by name:",
-                        on_change=lambda: st.session_state.update(page_number=0),
-                    ).lower()
+                    filter_cols = st.columns(3)
+                    with filter_cols[0]:
+                        filter_text = (
+                            st.text_input(
+                                "Filter items by name:",
+                                on_change=lambda: st.session_state.update(page_number=0),
+                            ).lower()
+                        )
+                    with filter_cols[1]:
+                        category_options = ["All"] + sorted(
+                            item_types["category"].dropna().unique().tolist()
+                        )
+                        selected_category = st.selectbox(
+                            "Filter by Category:",
+                            category_options,
+                            on_change=lambda: st.session_state.update(page_number=0),
+                        )
+                    with filter_cols[2]:
+                        source_options = ["All"] + sorted(
+                            item_types["source_table"].dropna().unique().tolist()
+                        )
+                        selected_source = st.selectbox(
+                            "Filter by Source Table:",
+                            source_options,
+                            on_change=lambda: st.session_state.update(page_number=0),
+                        )
 
+                    filtered_items = item_types
                     if filter_text:
-                        filtered_items = item_types[
-                            item_types["label"].str.lower().str.contains(filter_text)
+                        filtered_items = filtered_items[
+                            filtered_items["label"].str.lower().str.contains(filter_text)
                         ]
-                    else:
-                        filtered_items = item_types
+                    if selected_category != "All":
+                        filtered_items = filtered_items[
+                            filtered_items["category"] == selected_category
+                        ]
+                    if selected_source != "All":
+                        filtered_items = filtered_items[
+                            filtered_items["source_table"] == selected_source
+                        ]
 
                     sorted_items = filtered_items.sort_values(
                         by=st.session_state.sort_by,
