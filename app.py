@@ -259,15 +259,6 @@ if subject_id_input:
                             "Filter items by name:",
                             on_change=lambda: st.session_state.update(page_number=0),
                         ).lower()
-                    with filter_cols[1]:
-                        category_options = ["All"] + sorted(
-                            item_types["category"].dropna().unique().tolist()
-                        )
-                        selected_category = st.selectbox(
-                            "Filter by Category:",
-                            category_options,
-                            on_change=lambda: st.session_state.update(page_number=0),
-                        )
                     with filter_cols[2]:
                         source_options = ["All"] + sorted(
                             item_types["source_table"].dropna().unique().tolist()
@@ -275,6 +266,19 @@ if subject_id_input:
                         selected_source = st.selectbox(
                             "Filter by Source Table:",
                             source_options,
+                            on_change=lambda: st.session_state.update(page_number=0),
+                        )
+                    with filter_cols[1]:
+                        # Filter categories based on the selected source table
+                        if selected_source != "All":
+                            filtered_categories = item_types[item_types["source_table"] == selected_source]["category"].dropna().unique().tolist()
+                        else:
+                            filtered_categories = item_types["category"].dropna().unique().tolist()
+                            
+                        category_options = ["All"] + sorted(filtered_categories)
+                        selected_category = st.selectbox(
+                            "Filter by Category:",
+                            category_options,
                             on_change=lambda: st.session_state.update(page_number=0),
                         )
 
