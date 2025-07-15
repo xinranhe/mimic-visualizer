@@ -557,18 +557,16 @@ if subject_id_input:
                                         # collapse to a point. Add a small padding to
                                         # ensure it is visible.
                                         start_val = row[time_col]
-                                        # If endtime/stoptime is null, use starttime + 1 hour as default
+                                        # If endtime/stoptime is null or too short, use starttime + 1 hour as default
                                         if pd.isna(row[end_time_col]):
                                             end_val = start_val + pd.Timedelta(hours=1)
                                         else:
                                             end_val = row[end_time_col]
 
                                         if abs(end_val - start_val) <= pd.Timedelta(
-                                            minutes=1
+                                            hours=1
                                         ):
-                                            end_val = start_val + pd.Timedelta(
-                                                minutes=1
-                                            )
+                                            end_val = start_val + pd.Timedelta(hours=1)
 
                                         # Prepare hover text with all available fields
                                         hover_text = f"Item: {item['label']}<br>Start: {row[time_col]}"
@@ -577,11 +575,17 @@ if subject_id_input:
                                             hover_text += (
                                                 f"<br>End: {row[end_time_col]}"
                                             )
-                                        
+
                                         # Add all available fields to hover text
                                         for col, value in row.items():
                                             # Skip the columns we've already added or that are not informative
-                                            if col not in [time_col, end_time_col, 'subject_id', 'hadm_id', 'stay_id'] and pd.notna(value):
+                                            if col not in [
+                                                time_col,
+                                                end_time_col,
+                                                "subject_id",
+                                                "hadm_id",
+                                                "stay_id",
+                                            ] and pd.notna(value):
                                                 hover_text += f"<br>{col}: {value}"
 
                                         fig.add_trace(
