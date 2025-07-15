@@ -20,8 +20,8 @@ def get_arg_value(arg_name):
 
 
 @st.cache_resource
-def get_mysql_connection():
-    """Establishes and returns a connection to the MySQL database."""
+def _create_mysql_connection():
+    """Create and return a new MySQL connection object."""
     host = get_arg_value("--mysql-host")
     user = get_arg_value("--mysql-user")
     password = get_arg_value("--mysql-password")
@@ -37,14 +37,29 @@ def get_mysql_connection():
         return None
 
     try:
-        connection = mysql.connector.connect(
+        return mysql.connector.connect(
             host=host, user=user, password=password, database="mimic4"
         )
-        return connection
     except mysql.connector.Error as err:
         st.error(f"Error connecting to MySQL: {err}")
         st.warning("Please check your MySQL credentials and host availability.")
         return None
+
+
+def get_mysql_connection():
+    """Return an active MySQL connection, reconnecting if necessary."""
+    connection = _create_mysql_connection()
+    if connection is None:
+        return None
+
+    try:
+        if not connection.is_connected():
+            connection.reconnect(attempts=3, delay=2)
+    except mysql.connector.Error:
+        _create_mysql_connection.clear()
+        connection = _create_mysql_connection()
+
+    return connection
 
 
 @st.cache_resource
