@@ -6,7 +6,7 @@ from utils import (
     get_admissions,
     get_patient_info,
     get_admission_info,
-    get_icu_info,
+    get_admission_services,
     get_icd_diagnoses,
     get_icd_procedures,
     get_item_types,
@@ -86,20 +86,31 @@ if subject_id_input:
                 st.header("Patient and Admission Details")
                 patient_info = get_patient_info(subject_id)
                 admission_info = get_admission_info(subject_id, selected_hadm_id)
-                icu_info = get_icu_info(subject_id, selected_hadm_id)
+                services = get_admission_services(subject_id, selected_hadm_id)
 
                 col1, col2 = st.columns(2)
                 with col1:
                     st.write(f"**Gender:** {patient_info['gender']}")
-                    st.write(f"**Age:** {patient_info['anchor_age']}")
+                    adm_time = pd.to_datetime(admission_info["admittime"])
+                    anchor_date = pd.Timestamp(
+                        year=int(patient_info["anchor_year"]), month=1, day=1
+                    )
+                    admission_age = float(patient_info["anchor_age"]) + (
+                        adm_time - anchor_date
+                    ).days / 365.25
+                    admission_age = round(admission_age, 1)
+                    st.write(f"**Age at Admission:** {admission_age}")
                     if pd.notna(patient_info["dod"]):
                         st.write(f"**Date of Death:** {patient_info['dod']}")
                 with col2:
                     st.write(f"**Admission Time:** {admission_info['admittime']}")
                     st.write(f"**Discharge Time:** {admission_info['dischtime']}")
-                    if not icu_info.empty:
-                        st.write(f"**ICU Entry Time:** {icu_info['intime'].min()}")
-                        st.write(f"**ICU Exit Time:** {icu_info['outtime'].max()}")
+                    st.write(f"**Insurance:** {admission_info['insurance']}")
+                    st.write(f"**Language:** {admission_info['language']}")
+                    st.write(f"**Marital Status:** {admission_info['marital_status']}")
+                    st.write(f"**Ethnicity:** {admission_info['ethnicity']}")
+                    if services:
+                        st.write(f"**Services:** {services}")
 
                 # --- ICD INFORMATION ---
                 st.header("ICD Information")
