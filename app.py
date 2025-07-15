@@ -250,7 +250,7 @@ if subject_id_input:
                     st.info("No ICU stays found for this admission.")
 
                 # --- Item Table with Pagination and Sorting ---
-                st.header("Available ICU Data Items")
+                st.header("Available Patient Data Items")
                 item_types = get_item_types(subject_id, selected_hadm_id)
                 if not item_types.empty:
                     filter_cols = st.columns(3)
@@ -308,8 +308,8 @@ if subject_id_input:
 
                     # --- CHANGES START HERE ---
                     sort_icon = "🔼" if st.session_state.sort_ascending else "🔽"
-                    # Add a new column for Category
-                    header_cols = st.columns((3, 2, 2, 1))
+                    # Add columns for Category and Data Points Count
+                    header_cols = st.columns((3, 1.5, 1.5, 1.5, 1))
 
                     with header_cols[0]:
                         header_cols[0].button(
@@ -330,16 +330,28 @@ if subject_id_input:
                             on_click=handle_sort,
                             args=("category",),
                         )
-                    header_cols[3].markdown("**Action**")
+                    # Add the Data Points Count sort button
+                    with header_cols[3]:
+                        header_cols[3].button(
+                            f"Data Points {sort_icon if st.session_state.sort_by == 'data_count' else ''}",
+                            on_click=handle_sort,
+                            args=("data_count",),
+                        )
+                    header_cols[4].markdown("**Action**")
                     st.markdown("---")
 
-                    # Display the category for each item
+                    # Display the category and data points count for each item
                     for index, row in items_to_display_on_page.iterrows():
-                        col1, col2, col3, col4 = st.columns((3, 2, 2, 1))
+                        col1, col2, col3, col4, col5 = st.columns((3, 1.5, 1.5, 1.5, 1))
                         col1.write(row["label"])
                         col2.write(row["source_table"])
                         col3.write(row["category"])  # Display the category
-                        if col4.button(
+                        # Ensure data_count is an integer and handle NaN values
+                        data_count = row.get("data_count", 0)
+                        if pd.isna(data_count):
+                            data_count = 0
+                        col4.write(int(data_count))  # Display the data points count as integer
+                        if col5.button(
                             "Add", key=f"add_{row['itemid']}_{row['source_table']}"
                         ):
                             add_item_to_selection(row.to_dict())
@@ -402,24 +414,92 @@ if subject_id_input:
                             source_table = item["source_table"]
                             time_col = (
                                 "charttime"
-                                if source_table in ["chartevents", "datetimeevents"]
+                                if source_table in ["chartevents", "datetimeevents", "labevents"]
                                 else "starttime"
                             )
                             event_data[time_col] = pd.to_datetime(event_data[time_col])
                             event_data = event_data.sort_values(by=time_col)
 
-                            if source_table in ["chartevents", "outputevents"]:
+                            # For numerical data types (chartevents, outputevents, labevents)
+                            if source_table in [
+                                "chartevents",
+                                "outputevents",
+                                "labevents",
+                            ]:
                                 event_data["value_numeric"] = pd.to_numeric(
                                     event_data["value"], errors="coerce"
                                 )
                                 if event_data["value_numeric"].notna().any():
+                                    # Add unit information to the title if available
+                                    unit_info = ""
+                                    if (
+                                        "unit" in event_data.columns
+                                        and not event_data["unit"].isna().all()
+                                    ):
+                                        unit = event_data["unit"].iloc[0]
+                                        if pd.notna(unit):
+                                            unit_info = f" ({unit})"
+
                                     fig = px.line(
                                         event_data.dropna(subset=["value_numeric"]),
                                         x=time_col,
                                         y="value_numeric",
-                                        title=f"Line Plot for {item['label']}",
+                                        title=f"Line Plot for {item['label']}{unit_info}",
                                         markers=True,
                                     )
+
+                                    # Add reference ranges for lab values if available
+                                    if (
+                                        source_table == "labevents"
+                                        and "ref_range_lower" in event_data.columns
+                                        and "ref_range_upper" in event_data.columns
+                                    ):
+                                        # Check if we have valid reference ranges
+                                        has_lower = (
+                                            not event_data["ref_range_lower"]
+                                            .isna()
+                                            .all()
+                                        )
+                                        has_upper = (
+                                            not event_data["ref_range_upper"]
+                                            .isna()
+                                            .all()
+                                        )
+
+                                        if has_lower or has_upper:
+                                            # Use the first non-null value for reference ranges
+                                            lower_val = (
+                                                event_data["ref_range_lower"]
+                                                .dropna()
+                                                .iloc[0]
+                                                if has_lower
+                                                else None
+                                            )
+                                            upper_val = (
+                                                event_data["ref_range_upper"]
+                                                .dropna()
+                                                .iloc[0]
+                                                if has_upper
+                                                else None
+                                            )
+
+                                            # Add reference range lines
+                                            if lower_val is not None:
+                                                fig.add_hline(
+                                                    y=lower_val,
+                                                    line_dash="dash",
+                                                    line_color="orange",
+                                                    annotation_text="Lower reference",
+                                                    annotation_position="bottom right",
+                                                )
+                                            if upper_val is not None:
+                                                fig.add_hline(
+                                                    y=upper_val,
+                                                    line_dash="dash",
+                                                    line_color="orange",
+                                                    annotation_text="Upper reference",
+                                                    annotation_position="top right",
+                                                )
                                 else:
                                     fig = px.scatter(
                                         event_data,
@@ -436,36 +516,100 @@ if subject_id_input:
                                     title=f"Events for {item['label']}",
                                     hover_data=event_data.columns,
                                 )
+                            # For timeline-based data (ingredientevents, inputevents, procedureevents, prescriptions)
                             elif source_table in [
                                 "ingredientevents",
                                 "inputevents",
                                 "procedureevents",
+                                "prescriptions",
                             ]:
-                                event_data["endtime"] = pd.to_datetime(
-                                    event_data["endtime"]
+                                # Handle end time column name differences
+                                end_time_col = (
+                                    "endtime"
+                                    if "endtime" in event_data.columns
+                                    else "stoptime"
                                 )
-                                for _, row in event_data.iterrows():
-                                    # When the start and end times are within a
-                                    # minute of each other the segment would
-                                    # collapse to a point. Add a small padding to
-                                    # ensure it is visible.
-                                    start_val = row["starttime"]
-                                    end_val = row["endtime"]
-                                    if abs(end_val - start_val) <= pd.Timedelta(
-                                        minutes=1
-                                    ):
-                                        end_val = start_val + pd.Timedelta(minutes=1)
-                                    fig.add_trace(
-                                        go.Scatter(
-                                            x=[start_val, end_val],
-                                            y=[item["label"], item["label"]],
-                                            mode="lines",
-                                            line=dict(width=10),
-                                            hoverinfo="text",
-                                            text=f"Item: {item['label']}<br>Start: {row['starttime']}<br>End: {row['endtime']}<br>Amount: {row.get('amount', 'N/A')}",
-                                        )
+
+                                if end_time_col in event_data.columns:
+                                    event_data[end_time_col] = pd.to_datetime(
+                                        event_data[end_time_col]
                                     )
-                                fig.update_layout(title=f"Timeline for {item['label']}")
+
+                                    for _, row in event_data.iterrows():
+                                        # When the start and end times are within a
+                                        # minute of each other the segment would
+                                        # collapse to a point. Add a small padding to
+                                        # ensure it is visible.
+                                        start_val = row[time_col]
+                                        # If endtime/stoptime is null, use starttime + 1 hour as default
+                                        if pd.isna(row[end_time_col]):
+                                            end_val = start_val + pd.Timedelta(hours=1)
+                                        else:
+                                            end_val = row[end_time_col]
+
+                                        if abs(end_val - start_val) <= pd.Timedelta(
+                                            minutes=1
+                                        ):
+                                            end_val = start_val + pd.Timedelta(
+                                                minutes=1
+                                            )
+
+                                        # Prepare hover text with appropriate fields
+                                        hover_text = f"Item: {item['label']}<br>Start: {row[time_col]}"
+
+                                        if pd.notna(row[end_time_col]):
+                                            hover_text += (
+                                                f"<br>End: {row[end_time_col]}"
+                                            )
+
+                                        # Add different fields based on source table
+                                        if (
+                                            source_table
+                                            in ["inputevents", "ingredientevents"]
+                                            and "amount" in row
+                                        ):
+                                            hover_text += f"<br>Amount: {row.get('amount', 'N/A')}"
+                                        elif source_table == "prescriptions":
+                                            if "dose_val_rx" in row and pd.notna(
+                                                row["dose_val_rx"]
+                                            ):
+                                                hover_text += f"<br>Dose: {row['dose_val_rx']} {row.get('dose_unit_rx', '')}"
+                                            if "route" in row and pd.notna(
+                                                row["route"]
+                                            ):
+                                                hover_text += (
+                                                    f"<br>Route: {row['route']}"
+                                                )
+
+                                        fig.add_trace(
+                                            go.Scatter(
+                                                x=[start_val, end_val],
+                                                y=[item["label"], item["label"]],
+                                                mode="lines",
+                                                line=dict(width=10),
+                                                hoverinfo="text",
+                                                text=hover_text,
+                                            )
+                                        )
+
+                                    # Add custom title based on source table
+                                    title_prefix = (
+                                        "Prescription"
+                                        if source_table == "prescriptions"
+                                        else "Timeline"
+                                    )
+                                    fig.update_layout(
+                                        title=f"{title_prefix} for {item['label']}"
+                                    )
+                                else:
+                                    # If no endtime column, create a simple scatter plot
+                                    fig = px.scatter(
+                                        event_data,
+                                        x=time_col,
+                                        y=[item["label"]] * len(event_data),
+                                        title=f"Events for {item['label']}",
+                                        hover_data=event_data.columns,
+                                    )
 
                             fig.update_xaxes(range=[start_time, end_time])
                             st.plotly_chart(fig, use_container_width=True)
