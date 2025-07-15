@@ -95,22 +95,23 @@ if subject_id_input:
                     anchor_date = pd.Timestamp(
                         year=int(patient_info["anchor_year"]), month=1, day=1
                     )
-                    admission_age = float(patient_info["anchor_age"]) + (
-                        adm_time - anchor_date
-                    ).days / 365.25
+                    admission_age = (
+                        float(patient_info["anchor_age"])
+                        + (adm_time - anchor_date).days / 365.25
+                    )
                     admission_age = round(admission_age, 1)
                     st.write(f"**Age at Admission:** {admission_age}")
-                    if pd.notna(patient_info["dod"]):
-                        st.write(f"**Date of Death:** {patient_info['dod']}")
-                with col2:
-                    st.write(f"**Admission Time:** {admission_info['admittime']}")
-                    st.write(f"**Discharge Time:** {admission_info['dischtime']}")
                     st.write(f"**Insurance:** {admission_info['insurance']}")
                     st.write(f"**Language:** {admission_info['language']}")
                     st.write(f"**Marital Status:** {admission_info['marital_status']}")
-                    st.write(f"**Ethnicity:** {admission_info['ethnicity']}")
+                    st.write(f"**Ethnicity:** {admission_info['race']}")
+                with col2:
+                    st.write(f"**Admission Time:** {admission_info['admittime']}")
+                    st.write(f"**Discharge Time:** {admission_info['dischtime']}")
                     if services:
                         st.write(f"**Services:** {services}")
+                    if pd.notna(patient_info["dod"]):
+                        st.write(f"**Date of Death:** {patient_info['dod']}")
 
                 # --- ICD INFORMATION ---
                 st.header("ICD Information")
@@ -139,12 +140,10 @@ if subject_id_input:
                 if not item_types.empty:
                     filter_cols = st.columns(3)
                     with filter_cols[0]:
-                        filter_text = (
-                            st.text_input(
-                                "Filter items by name:",
-                                on_change=lambda: st.session_state.update(page_number=0),
-                            ).lower()
-                        )
+                        filter_text = st.text_input(
+                            "Filter items by name:",
+                            on_change=lambda: st.session_state.update(page_number=0),
+                        ).lower()
                     with filter_cols[1]:
                         category_options = ["All"] + sorted(
                             item_types["category"].dropna().unique().tolist()
@@ -167,7 +166,9 @@ if subject_id_input:
                     filtered_items = item_types
                     if filter_text:
                         filtered_items = filtered_items[
-                            filtered_items["label"].str.lower().str.contains(filter_text)
+                            filtered_items["label"]
+                            .str.lower()
+                            .str.contains(filter_text)
                         ]
                     if selected_category != "All":
                         filtered_items = filtered_items[
@@ -335,7 +336,9 @@ if subject_id_input:
                                     # ensure it is visible.
                                     start_val = row["starttime"]
                                     end_val = row["endtime"]
-                                    if abs(end_val - start_val) <= pd.Timedelta(minutes=1):
+                                    if abs(end_val - start_val) <= pd.Timedelta(
+                                        minutes=1
+                                    ):
                                         end_val = start_val + pd.Timedelta(minutes=1)
                                     fig.add_trace(
                                         go.Scatter(
