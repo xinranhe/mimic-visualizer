@@ -271,10 +271,19 @@ if subject_id_input:
                     with filter_cols[1]:
                         # Filter categories based on the selected source table
                         if selected_source != "All":
-                            filtered_categories = item_types[item_types["source_table"] == selected_source]["category"].dropna().unique().tolist()
+                            filtered_categories = (
+                                item_types[
+                                    item_types["source_table"] == selected_source
+                                ]["category"]
+                                .dropna()
+                                .unique()
+                                .tolist()
+                            )
                         else:
-                            filtered_categories = item_types["category"].dropna().unique().tolist()
-                            
+                            filtered_categories = (
+                                item_types["category"].dropna().unique().tolist()
+                            )
+
                         category_options = ["All"] + sorted(filtered_categories)
                         selected_category = st.selectbox(
                             "Filter by Category:",
@@ -354,7 +363,9 @@ if subject_id_input:
                         data_count = row.get("data_count", 0)
                         if pd.isna(data_count):
                             data_count = 0
-                        col4.write(int(data_count))  # Display the data points count as integer
+                        col4.write(
+                            int(data_count)
+                        )  # Display the data points count as integer
                         if col5.button(
                             "Add", key=f"add_{row['itemid']}_{row['source_table']}"
                         ):
@@ -418,7 +429,8 @@ if subject_id_input:
                             source_table = item["source_table"]
                             time_col = (
                                 "charttime"
-                                if source_table in ["chartevents", "datetimeevents", "labevents"]
+                                if source_table
+                                in ["chartevents", "datetimeevents", "labevents"]
                                 else "starttime"
                             )
                             event_data[time_col] = pd.to_datetime(event_data[time_col])
@@ -516,7 +528,7 @@ if subject_id_input:
                                 fig = px.scatter(
                                     event_data,
                                     x=time_col,
-                                    y=["value"] * len(event_data),
+                                    y=["Event"] * len(event_data),
                                     title=f"Events for {item['label']}",
                                     hover_data=event_data.columns,
                                 )
@@ -558,32 +570,19 @@ if subject_id_input:
                                                 minutes=1
                                             )
 
-                                        # Prepare hover text with appropriate fields
+                                        # Prepare hover text with all available fields
                                         hover_text = f"Item: {item['label']}<br>Start: {row[time_col]}"
 
                                         if pd.notna(row[end_time_col]):
                                             hover_text += (
                                                 f"<br>End: {row[end_time_col]}"
                                             )
-
-                                        # Add different fields based on source table
-                                        if (
-                                            source_table
-                                            in ["inputevents", "ingredientevents"]
-                                            and "amount" in row
-                                        ):
-                                            hover_text += f"<br>Amount: {row.get('amount', 'N/A')}"
-                                        elif source_table == "prescriptions":
-                                            if "dose_val_rx" in row and pd.notna(
-                                                row["dose_val_rx"]
-                                            ):
-                                                hover_text += f"<br>Dose: {row['dose_val_rx']} {row.get('dose_unit_rx', '')}"
-                                            if "route" in row and pd.notna(
-                                                row["route"]
-                                            ):
-                                                hover_text += (
-                                                    f"<br>Route: {row['route']}"
-                                                )
+                                        
+                                        # Add all available fields to hover text
+                                        for col, value in row.items():
+                                            # Skip the columns we've already added or that are not informative
+                                            if col not in [time_col, end_time_col, 'subject_id', 'hadm_id', 'stay_id'] and pd.notna(value):
+                                                hover_text += f"<br>{col}: {value}"
 
                                         fig.add_trace(
                                             go.Scatter(
