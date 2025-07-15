@@ -568,26 +568,6 @@ if subject_id_input:
                                         ):
                                             end_val = start_val + pd.Timedelta(hours=1)
 
-                                        # Prepare hover text with all available fields
-                                        hover_text = f"Item: {item['label']}<br>Start: {row[time_col]}"
-
-                                        if pd.notna(row[end_time_col]):
-                                            hover_text += (
-                                                f"<br>End: {row[end_time_col]}"
-                                            )
-
-                                        # Add all available fields to hover text
-                                        for col, value in row.items():
-                                            # Skip the columns we've already added or that are not informative
-                                            if col not in [
-                                                time_col,
-                                                end_time_col,
-                                                "subject_id",
-                                                "hadm_id",
-                                                "stay_id",
-                                            ] and pd.notna(value):
-                                                hover_text += f"<br>{col}: {value}"
-
                                         fig.add_trace(
                                             go.Scatter(
                                                 x=[start_val, end_val],
@@ -595,10 +575,9 @@ if subject_id_input:
                                                 mode="lines",
                                                 line=dict(width=10),
                                                 hoverinfo="text",
-                                                text=hover_text,
+                                                text=event_data.columns,
                                             )
                                         )
-
                                     # Add custom title based on source table
                                     title_prefix = (
                                         "Prescription"
