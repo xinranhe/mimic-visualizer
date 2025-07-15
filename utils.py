@@ -13,10 +13,13 @@ def get_admissions(subject_id):
 
 
 def get_patient_info(subject_id):
-    """Retrieves basic information for a specific patient."""
+    """Retrieves basic patient information including anchor year."""
     conn = get_mysql_connection()
     if conn is not None:
-        query = f"SELECT gender, anchor_age, dod FROM patients WHERE subject_id = {subject_id}"
+        query = (
+            f"SELECT gender, anchor_age, anchor_year, dod "
+            f"FROM patients WHERE subject_id = {subject_id}"
+        )
         return pd.read_sql(query, conn).iloc[0]
     return None
 
@@ -26,12 +29,30 @@ def get_admission_info(subject_id, hadm_id):
     conn = get_mysql_connection()
     if conn is not None:
         query = f"""
-        SELECT admittime, dischtime
+        SELECT admittime, dischtime, insurance, language,
+               marital_status, ethnicity
         FROM admissions
         WHERE subject_id = {subject_id} AND hadm_id = {hadm_id}
         """
         return pd.read_sql(query, conn).iloc[0]
     return None
+
+
+def get_admission_services(subject_id, hadm_id):
+    """Returns a comma separated list of services for the admission."""
+    conn = get_mysql_connection()
+    if conn is not None:
+        query = f"""
+        SELECT DISTINCT curr_service
+        FROM services
+        WHERE subject_id = {subject_id} AND hadm_id = {hadm_id}
+        ORDER BY transfertime
+        """
+        df = pd.read_sql(query, conn)
+        if df.empty:
+            return ""
+        return ",".join(df["curr_service"].dropna().tolist())
+    return ""
 
 
 def get_icu_info(subject_id, hadm_id):
