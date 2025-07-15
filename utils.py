@@ -59,9 +59,10 @@ def get_icu_info(subject_id, hadm_id):
     conn = get_mysql_connection()
     if conn is not None:
         query = f"""
-        SELECT intime, outtime
+        SELECT stay_id, intime, outtime
         FROM icustays
         WHERE subject_id = {subject_id} AND hadm_id = {hadm_id}
+        ORDER BY intime ASC
         """
         return pd.read_sql(query, conn)
     return pd.DataFrame()
