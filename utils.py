@@ -73,12 +73,18 @@ def get_icd_diagnoses(subject_id, hadm_id):
     conn = get_mysql_connection()
     if conn is not None:
         query = f"""
-        SELECT d.long_title
+        SELECT di.icd_code, di.icd_version, d.long_title
         FROM diagnoses_icd di
         JOIN d_icd_diagnoses d ON di.icd_code = d.icd_code AND di.icd_version = d.icd_version
         WHERE di.subject_id = {subject_id} AND di.hadm_id = {hadm_id}
         """
-        return pd.read_sql(query, conn)
+        df = pd.read_sql(query, conn)
+        # Create a combined column for display with format [V9] 123.45 or [V10] A12.3
+        if not df.empty:
+            df['icd'] = '[V' + df['icd_version'].astype(str) + '] ' + df['icd_code']
+            # Reorder columns to put combined column first
+            df = df[['icd', 'long_title']]
+        return df
     return pd.DataFrame()
 
 
@@ -87,12 +93,18 @@ def get_icd_procedures(subject_id, hadm_id):
     conn = get_mysql_connection()
     if conn is not None:
         query = f"""
-        SELECT p.long_title
+        SELECT pi.icd_code, pi.icd_version, p.long_title
         FROM procedures_icd pi
         JOIN d_icd_procedures p ON pi.icd_code = p.icd_code AND pi.icd_version = p.icd_version
         WHERE pi.subject_id = {subject_id} AND pi.hadm_id = {hadm_id}
         """
-        return pd.read_sql(query, conn)
+        df = pd.read_sql(query, conn)
+        # Create a combined column for display with format [V9] 123.45 or [V10] A12.3
+        if not df.empty:
+            df['icd'] = '[V' + df['icd_version'].astype(str) + '] ' + df['icd_code']
+            # Reorder columns to put combined column first
+            df = df[['icd', 'long_title']]
+        return df
     return pd.DataFrame()
 
 
