@@ -30,7 +30,7 @@ def get_admission_info(subject_id, hadm_id):
     if conn is not None:
         query = f"""
         SELECT admittime, dischtime, insurance, language,
-               marital_status, ethnicity
+               marital_status, race
         FROM admissions
         WHERE subject_id = {subject_id} AND hadm_id = {hadm_id}
         """
@@ -46,7 +46,6 @@ def get_admission_services(subject_id, hadm_id):
         SELECT DISTINCT curr_service
         FROM services
         WHERE subject_id = {subject_id} AND hadm_id = {hadm_id}
-        ORDER BY transfertime
         """
         df = pd.read_sql(query, conn)
         if df.empty:
