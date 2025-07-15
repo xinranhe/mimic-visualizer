@@ -9,6 +9,7 @@ from utils import (
     get_admission_services,
     get_icd_diagnoses,
     get_icd_procedures,
+    get_icu_info,
     get_item_types,
     get_event_data,
     get_discharge_notes,
@@ -133,6 +134,120 @@ if subject_id_input:
                             st.text(note.get("text", "Note text not available."))
                 else:
                     st.info("No discharge notes found for this admission.")
+
+                # --- ICU STAYS ---
+                st.header("ICU Stays")
+                icu_stays = get_icu_info(subject_id, selected_hadm_id)
+
+                if not icu_stays.empty:
+                    # Create a timeline visualization for ICU stays
+                    icu_fig = go.Figure()
+
+                    # Process ICU stays data for visualization
+                    icu_stays["intime"] = pd.to_datetime(icu_stays["intime"])
+                    icu_stays["outtime"] = pd.to_datetime(icu_stays["outtime"])
+                    icu_stays["duration_hours"] = (
+                        icu_stays["outtime"] - icu_stays["intime"]
+                    ).dt.total_seconds() / 3600
+
+                    # Create segments for each ICU stay
+                    y_labels = []
+                    for idx, stay in enumerate(icu_stays.itertuples()):
+                        stay_label = f"ICU Stay {idx + 1} (ID: {stay.stay_id})"
+                        y_labels.append(stay_label)
+
+                        hover_text = f"ICU Stay {idx + 1}<br>ID: {stay.stay_id}<br>Start: {stay.intime.strftime('%Y-%m-%d %H:%M')}<br>End: {stay.outtime.strftime('%Y-%m-%d %H:%M')}<br>Duration: {stay.duration_hours:.1f} hours"
+
+                        icu_fig.add_trace(
+                            go.Scatter(
+                                x=[stay.intime, stay.outtime],
+                                y=[stay_label, stay_label],
+                                mode="lines",
+                                line=dict(width=10, color="#1f77b4"),
+                                name=stay_label,
+                                hoverinfo="text",
+                                text=hover_text,
+                                showlegend=False,
+                            )
+                        )
+
+                    # Add patient death marker if applicable
+                    death_y_value = None
+                    if pd.notna(patient_info["dod"]):
+                        death_date = pd.to_datetime(patient_info["dod"])
+                        # Check if death occurred during the admission period
+                        if (
+                            admission_info["admittime"]
+                            <= death_date
+                            <= admission_info["dischtime"]
+                        ):
+                            # Create death marker at end of day
+                            death_datetime = pd.Timestamp(
+                                death_date.year,
+                                death_date.month,
+                                death_date.day,
+                                23,
+                                59,
+                                59,
+                            )
+                            death_y_value = "Patient Death"
+                            y_labels.append(death_y_value)
+
+                            icu_fig.add_trace(
+                                go.Scatter(
+                                    x=[death_datetime],
+                                    y=[death_y_value],
+                                    mode="markers",
+                                    marker=dict(symbol="x", size=15, color="red"),
+                                    name="Death",
+                                    hoverinfo="text",
+                                    text=f"Date of Death: {death_date.strftime('%Y-%m-%d')}",
+                                    showlegend=True,
+                                )
+                            )
+
+                    # Display summary info in a table
+                    icu_summary = pd.DataFrame(
+                        {
+                            "ICU Stay": [
+                                f"Stay {idx+1} (ID: {stay.stay_id})"
+                                for idx, stay in enumerate(icu_stays.itertuples())
+                            ],
+                            "Start Time": icu_stays["intime"].dt.strftime(
+                                "%Y-%m-%d %H:%M"
+                            ),
+                            "End Time": icu_stays["outtime"].dt.strftime(
+                                "%Y-%m-%d %H:%M"
+                            ),
+                            "Duration (hours)": icu_stays["duration_hours"].round(1),
+                        }
+                    )
+
+                    st.dataframe(icu_summary)
+
+                    # Configure layout
+                    icu_fig.update_layout(
+                        title="ICU Stays Timeline",
+                        xaxis=dict(
+                            title="Time",
+                            range=[
+                                admission_info["admittime"],
+                                admission_info["dischtime"],
+                            ],
+                        ),
+                        yaxis=dict(
+                            title="", categoryorder="array", categoryarray=y_labels
+                        ),
+                        height=max(
+                            200, 100 + (len(y_labels) * 40)
+                        ),  # Adjust height based on number of stays
+                        margin=dict(l=10, r=10, t=30, b=10),
+                        hovermode="closest",
+                    )
+
+                    st.plotly_chart(icu_fig, use_container_width=True)
+                else:
+                    st.info("No ICU stays found for this admission.")
 
                 # --- Item Table with Pagination and Sorting ---
                 st.header("Available ICU Data Items")
