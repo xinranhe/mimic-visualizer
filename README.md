@@ -5,6 +5,7 @@
 -  Run script to populate the mimic-iv-node discharge notes to mongo
 - Run `pip install -r requirement.txt` to install the dependency
 - Run `streamlit run app.py -- --mysql-host YOUR_HOST --mysql-user YOUR_USER --mysql-password YOUR_PASSWORD --mongo-uri YOUR_MONGO_URI` to start the server
+- The server now automatically reconnects if the MySQL connection drops.
 
 ## Examples
 ![Screenshot 1](images/screenshot1.png)
