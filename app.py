@@ -568,6 +568,11 @@ if subject_id_input:
                                         ):
                                             end_val = start_val + pd.Timedelta(hours=1)
 
+                                        hover_text = "<br>".join(
+                                            f"{col}: {row[col]}"
+                                            for col in event_data.columns
+                                        )
+
                                         fig.add_trace(
                                             go.Scatter(
                                                 x=[start_val, end_val],
@@ -575,7 +580,7 @@ if subject_id_input:
                                                 mode="lines",
                                                 line=dict(width=10),
                                                 hoverinfo="text",
-                                                text=event_data.columns,
+                                                text=hover_text,
                                             )
                                         )
                                     # Add custom title based on source table
