@@ -73,12 +73,22 @@ if subject_id_input:
         subject_id = int(subject_id_input)
         admissions = get_admissions(subject_id)
         if not admissions.empty:
+            admissions["admit_date"] = pd.to_datetime(admissions["admittime"]).dt.date
+            admissions["discharge_date"] = pd.to_datetime(
+                admissions["dischtime"]
+            ).dt.date
             admission_options = admissions.to_dict("records")
+
+            def admission_label(admission):
+                label = f"{admission['hadm_id']} ({admission['admit_date']} - {admission['discharge_date']})"
+                if admission["has_icu"]:
+                    label += " [ICU]"
+                return label
+
             selected_admission = st.selectbox(
                 "Select Admission:",
                 admission_options,
-                format_func=lambda adm: f"{adm['hadm_id']}: {adm['admittime']}"
-                f"-{adm['dischtime']}{' [ICU]' if adm['has_icu'] else ''}",
+                format_func=admission_label,
                 on_change=lambda: [
                     reset_page_and_sort(),
                     st.session_state.update(selected_items=[]),
