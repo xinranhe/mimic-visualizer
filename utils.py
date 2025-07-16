@@ -3,13 +3,28 @@ from db_connections import get_mysql_connection, get_mongo_connection
 
 
 def get_admissions(subject_id):
-    """Fetches all hospital admission IDs (hadm_id) for a given patient."""
+    """Return admissions with times and ICU stay information sorted by time."""
     conn = get_mysql_connection()
-    if conn is not None:
-        query = f"SELECT hadm_id FROM admissions WHERE subject_id = {subject_id}"
-        df = pd.read_sql(query, conn)
-        return df["hadm_id"].tolist()
-    return []
+    if conn is None:
+        return pd.DataFrame()
+
+    query = f"""
+    SELECT a.hadm_id,
+           a.admittime,
+           a.dischtime,
+           CASE WHEN i.hadm_id IS NOT NULL THEN 1 ELSE 0 END AS has_icu
+    FROM admissions a
+    LEFT JOIN (
+        SELECT DISTINCT hadm_id
+        FROM icustays
+        WHERE subject_id = {subject_id}
+    ) i ON a.hadm_id = i.hadm_id
+    WHERE a.subject_id = {subject_id}
+    ORDER BY a.admittime ASC
+    """
+
+    admissions_df = pd.read_sql(query, conn)
+    return admissions_df
 
 
 def get_patient_info(subject_id):
@@ -81,9 +96,9 @@ def get_icd_diagnoses(subject_id, hadm_id):
         df = pd.read_sql(query, conn)
         # Create a combined column for display with format [V9] 123.45 or [V10] A12.3
         if not df.empty:
-            df['icd'] = '[V' + df['icd_version'].astype(str) + '] ' + df['icd_code']
+            df["icd"] = "[V" + df["icd_version"].astype(str) + "] " + df["icd_code"]
             # Reorder columns to put combined column first
-            df = df[['icd', 'long_title']]
+            df = df[["icd", "long_title"]]
         return df
     return pd.DataFrame()
 
@@ -101,9 +116,9 @@ def get_icd_procedures(subject_id, hadm_id):
         df = pd.read_sql(query, conn)
         # Create a combined column for display with format [V9] 123.45 or [V10] A12.3
         if not df.empty:
-            df['icd'] = '[V' + df['icd_version'].astype(str) + '] ' + df['icd_code']
+            df["icd"] = "[V" + df["icd_version"].astype(str) + "] " + df["icd_code"]
             # Reorder columns to put combined column first
-            df = df[['icd', 'long_title']]
+            df = df[["icd", "long_title"]]
         return df
     return pd.DataFrame()
 
@@ -127,7 +142,7 @@ def get_item_types(subject_id, hadm_id):
         SELECT 'procedureevents' as source_table, itemid, COUNT(*) as data_count FROM procedureevents WHERE subject_id = {subject_id} AND hadm_id = {hadm_id} GROUP BY itemid
         """
         icu_item_ids = pd.read_sql(icu_query, conn)
-        
+
         # Join with d_items to get labels
         if not icu_item_ids.empty:
             d_items_query = "SELECT itemid, label, abbreviation, category FROM d_items"
@@ -135,7 +150,7 @@ def get_item_types(subject_id, hadm_id):
             icu_items = pd.merge(icu_item_ids, d_items, on="itemid")
         else:
             icu_items = pd.DataFrame()
-            
+
         # 2. Get lab items from labevents
         lab_query = f"""
         SELECT 'labevents' as source_table, itemid, COUNT(*) as data_count
@@ -144,19 +159,19 @@ def get_item_types(subject_id, hadm_id):
         GROUP BY itemid
         """
         lab_item_ids = pd.read_sql(lab_query, conn)
-        
+
         # Join with d_labitems to get labels
         if not lab_item_ids.empty:
             d_labitems_query = "SELECT itemid, label, fluid, category FROM d_labitems"
             d_labitems = pd.read_sql(d_labitems_query, conn)
-            
+
             # Rename fluid to abbreviation to align with d_items schema
             d_labitems = d_labitems.rename(columns={"fluid": "abbreviation"})
-            
+
             lab_items = pd.merge(lab_item_ids, d_labitems, on="itemid")
         else:
             lab_items = pd.DataFrame()
-        
+
         # 3. Get prescription items
         # For prescriptions, we'll use drug as item identifier and route as category
         prescriptions_query = f"""
@@ -168,30 +183,45 @@ def get_item_types(subject_id, hadm_id):
         GROUP BY drug, route
         """
         prescriptions_df = pd.read_sql(prescriptions_query, conn)
-        
+
         if not prescriptions_df.empty:
             # Create a synthetic itemid for prescriptions by hashing the drug+route combo
             # This allows us to uniquely identify each drug+route combination
             # Convert to string hashes and then to positive integers to avoid conflicts with real itemids
-            prescriptions_df['itemid'] = prescriptions_df.apply(
-                lambda row: abs(hash(f"prescription_{row['drug']}_{row['route'] or 'NA'}") % (10**9)),
-                axis=1
+            prescriptions_df["itemid"] = prescriptions_df.apply(
+                lambda row: abs(
+                    hash(f"prescription_{row['drug']}_{row['route'] or 'NA'}") % (10**9)
+                ),
+                axis=1,
             )
-            
+
             # Format the prescription items to match the schema of other items
-            prescriptions_df['label'] = prescriptions_df['drug']
-            prescriptions_df['category'] = prescriptions_df['route'].fillna('Unspecified')
-            prescriptions_df['abbreviation'] = ''
+            prescriptions_df["label"] = prescriptions_df["drug"]
+            prescriptions_df["category"] = prescriptions_df["route"].fillna(
+                "Unspecified"
+            )
+            prescriptions_df["abbreviation"] = ""
             # Rename count to data_count for consistency
-            prescriptions_df.rename(columns={'count': 'data_count'}, inplace=True)
-            
+            prescriptions_df.rename(columns={"count": "data_count"}, inplace=True)
+
             # Select only relevant columns
-            prescription_items = prescriptions_df[['source_table', 'itemid', 'label', 'abbreviation', 'category', 'data_count']]
+            prescription_items = prescriptions_df[
+                [
+                    "source_table",
+                    "itemid",
+                    "label",
+                    "abbreviation",
+                    "category",
+                    "data_count",
+                ]
+            ]
         else:
             prescription_items = pd.DataFrame()
-        
+
         # Combine all items
-        all_items = pd.concat([icu_items, lab_items, prescription_items], ignore_index=True)
+        all_items = pd.concat(
+            [icu_items, lab_items, prescription_items], ignore_index=True
+        )
         return all_items
     return pd.DataFrame()
 
@@ -211,7 +241,7 @@ def get_event_data(subject_id, hadm_id, item_id, source_table, start_time, end_t
         time_col = "starttime"  # Prescriptions use starttime
     else:  # Covers chartevents, outputevents, datetimeevents
         time_col = "charttime"
-    
+
     # For standard tables with itemid (ICU items and lab items)
     if source_table not in ["prescriptions"]:
         query = f"""
@@ -222,25 +252,29 @@ def get_event_data(subject_id, hadm_id, item_id, source_table, start_time, end_t
           AND itemid = {item_id}
           AND {time_col} BETWEEN '{start_time}' AND '{end_time}'
         """
-        
+
         # For labevents, convert valuenum to value if available for consistent visualization
         result_df = pd.read_sql(query, conn)
-        
+
         if source_table == "labevents" and not result_df.empty:
             # If valuenum is available, use it as the primary value for visualization
             # But preserve original value in value_text field for reference
-            if 'valuenum' in result_df.columns:
-                result_df['value_text'] = result_df['value']  # Store original text value
+            if "valuenum" in result_df.columns:
+                result_df["value_text"] = result_df[
+                    "value"
+                ]  # Store original text value
                 # Replace value with valuenum where available
-                mask = result_df['valuenum'].notna()
-                result_df.loc[mask, 'value'] = result_df.loc[mask, 'valuenum'].astype(str)
-                
+                mask = result_df["valuenum"].notna()
+                result_df.loc[mask, "value"] = result_df.loc[mask, "valuenum"].astype(
+                    str
+                )
+
                 # Add a column for units if it exists
-                if 'valueuom' in result_df.columns:
-                    result_df['unit'] = result_df['valueuom']
-                    
+                if "valueuom" in result_df.columns:
+                    result_df["unit"] = result_df["valueuom"]
+
         return result_df
-    
+
     # Handle prescriptions - we need to find the specific drug and route from the hashed itemid
     elif source_table == "prescriptions":
         # First, we need to get the drug and route info from our items table
@@ -253,25 +287,29 @@ def get_event_data(subject_id, hadm_id, item_id, source_table, start_time, end_t
         AND hadm_id = {hadm_id}
         GROUP BY drug, route
         """
-        
+
         all_prescription_items = pd.read_sql(items_query, conn)
-        
+
         # Calculate the same hash we used in get_item_types
-        all_prescription_items['calculated_itemid'] = all_prescription_items.apply(
-            lambda row: abs(hash(f"prescription_{row['drug']}_{row['route'] or 'NA'}") % (10**9)),
-            axis=1
+        all_prescription_items["calculated_itemid"] = all_prescription_items.apply(
+            lambda row: abs(
+                hash(f"prescription_{row['drug']}_{row['route'] or 'NA'}") % (10**9)
+            ),
+            axis=1,
         )
-        
+
         # Find the matching drug and route based on the item_id
-        matching_items = all_prescription_items[all_prescription_items['calculated_itemid'] == item_id]
-        
+        matching_items = all_prescription_items[
+            all_prescription_items["calculated_itemid"] == item_id
+        ]
+
         if matching_items.empty:
             return pd.DataFrame()
-            
+
         # Get the actual drug and route for this itemid
-        drug = matching_items.iloc[0]['drug']
-        route = matching_items.iloc[0]['route']
-        
+        drug = matching_items.iloc[0]["drug"]
+        route = matching_items.iloc[0]["route"]
+
         # Now get all prescriptions matching this drug+route combination
         prescriptions_query = f"""
         SELECT 
@@ -285,22 +323,26 @@ def get_event_data(subject_id, hadm_id, item_id, source_table, start_time, end_t
           AND starttime BETWEEN '{start_time}' AND '{end_time}'
         ORDER BY starttime
         """
-        
+
         prescriptions_df = pd.read_sql(prescriptions_query, conn)
-        
+
         # Add consistent columns for visualization
         if not prescriptions_df.empty:
             # Add a value column for dose information
-            prescriptions_df['value'] = prescriptions_df.apply(
-                lambda row: f"{row['dose_val_rx']} {row['dose_unit_rx']}" if pd.notna(row['dose_val_rx']) else "Unknown dose",
-                axis=1
+            prescriptions_df["value"] = prescriptions_df.apply(
+                lambda row: (
+                    f"{row['dose_val_rx']} {row['dose_unit_rx']}"
+                    if pd.notna(row["dose_val_rx"])
+                    else "Unknown dose"
+                ),
+                axis=1,
             )
-            
+
             # Add itemid column
-            prescriptions_df['itemid'] = item_id
-        
+            prescriptions_df["itemid"] = item_id
+
         return prescriptions_df
-    
+
     return pd.DataFrame()
 
 

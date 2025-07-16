@@ -71,18 +71,22 @@ subject_id_input = st.text_input(
 if subject_id_input:
     try:
         subject_id = int(subject_id_input)
-        hadm_ids = get_admissions(subject_id)
-        if hadm_ids:
-            selected_hadm_id = st.selectbox(
-                "Select Admission ID (hadm_id):",
-                hadm_ids,
+        admissions = get_admissions(subject_id)
+        if not admissions.empty:
+            admission_options = admissions.to_dict("records")
+            selected_admission = st.selectbox(
+                "Select Admission:",
+                admission_options,
+                format_func=lambda adm: f"{adm['hadm_id']}: {adm['admittime']}"
+                f"-{adm['dischtime']}{' [ICU]' if adm['has_icu'] else ''}",
                 on_change=lambda: [
                     reset_page_and_sort(),
                     st.session_state.update(selected_items=[]),
                 ],
             )
 
-            if selected_hadm_id:
+            if selected_admission:
+                selected_hadm_id = selected_admission["hadm_id"]
                 # --- PATIENT AND ADMISSION DETAILS ---
                 st.header("Patient and Admission Details")
                 patient_info = get_patient_info(subject_id)
