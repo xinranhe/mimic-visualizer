@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
+import textwrap
 from utils import (
     get_admissions,
     get_patient_info,
@@ -121,18 +122,23 @@ if subject_id_input:
                 st.header("Patient and Admission Details")
                 patient_info = get_patient_info(subject_id)
                 admission_info = get_admission_info(subject_id, selected_hadm_id)
+                admission_start_timestamp = pd.to_datetime(
+                    admission_info["admittime"]
+                )
+                admission_end_timestamp = pd.to_datetime(
+                    admission_info["dischtime"]
+                )
                 services = get_admission_services(subject_id, selected_hadm_id)
 
                 col1, col2 = st.columns(2)
                 with col1:
                     st.write(f"**Gender:** {patient_info['gender']}")
-                    adm_time = pd.to_datetime(admission_info["admittime"])
                     anchor_date = pd.Timestamp(
                         year=int(patient_info["anchor_year"]), month=1, day=1
                     )
                     admission_age = (
                         float(patient_info["anchor_age"])
-                        + (adm_time - anchor_date).days / 365.25
+                        + (admission_start_timestamp - anchor_date).days / 365.25
                     )
                     admission_age = round(admission_age, 1)
                     st.write(f"**Age at Admission:** {admission_age}")
@@ -285,7 +291,12 @@ if subject_id_input:
 
                 # --- Item Table with Pagination and Sorting ---
                 st.header("Available Patient Data Items")
-                item_types = get_item_types(subject_id, selected_hadm_id)
+                item_types = get_item_types(
+                    subject_id,
+                    selected_hadm_id,
+                    admission_start_timestamp,
+                    admission_end_timestamp,
+                )
                 if not item_types.empty:
                     filter_cols = st.columns(3)
                     with filter_cols[0]:
@@ -422,16 +433,13 @@ if subject_id_input:
 
                 # --- Visualization Widget ---
                 st.header("Visualize Items Over Time")
-                admission_start = pd.to_datetime(admission_info["admittime"])
-                admission_end = pd.to_datetime(admission_info["dischtime"])
-
                 start_time, end_time = st.slider(
                     "Select time range to visualize:",
-                    min_value=admission_start.to_pydatetime(),
-                    max_value=admission_end.to_pydatetime(),
+                    min_value=admission_start_timestamp.to_pydatetime(),
+                    max_value=admission_end_timestamp.to_pydatetime(),
                     value=(
-                        admission_start.to_pydatetime(),
-                        admission_end.to_pydatetime(),
+                        admission_start_timestamp.to_pydatetime(),
+                        admission_end_timestamp.to_pydatetime(),
                     ),
                     format="MM/DD/YYYY - hh:mm a",
                 )
@@ -461,6 +469,47 @@ if subject_id_input:
                         if not event_data.empty:
                             fig = go.Figure()
                             source_table = item["source_table"]
+
+                            if source_table == "ecgevents":
+                                event_data["ecg_time"] = pd.to_datetime(
+                                    event_data["ecg_time"]
+                                )
+                                event_data = event_data.sort_values(
+                                    by="ecg_time"
+                                )
+                                event_data["series_label"] = item["label"]
+                                if "text" in event_data.columns:
+                                    def wrap_hover_text(value):
+                                        if isinstance(value, str) and value.strip():
+                                            wrapped_lines = textwrap.wrap(
+                                                value, width=70
+                                            )
+                                            return "<br>".join(wrapped_lines)
+                                        return value
+
+                                    event_data["text"] = event_data["text"].apply(
+                                        wrap_hover_text
+                                    )
+                                hover_columns = [
+                                    column
+                                    for column in event_data.columns
+                                    if column not in {"series_label"}
+                                ]
+                                fig = px.scatter(
+                                    event_data,
+                                    x="ecg_time",
+                                    y="series_label",
+                                    title=f"ECG Scatter for {item['label']}",
+                                    hover_data=hover_columns,
+                                )
+                                fig.update_traces(marker=dict(size=9))
+                                configure_chart_layout(fig)
+                                fig.update_xaxes(range=[start_time, end_time])
+                                fig.update_yaxes(title="")
+                                st.plotly_chart(fig, use_container_width=True)
+                                st.write("---")
+                                continue
+
                             time_col = (
                                 "charttime"
                                 if source_table
