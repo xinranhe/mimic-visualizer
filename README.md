@@ -11,7 +11,8 @@ The repo contains a visualizer that lets clinicians or researchers inspect indiv
 
 ## Usage
 - Following the instruction in [mimic-code](https://github.com/MIT-LCP/mimic-code/tree/main/mimic-iv/buildmimic/mysql) to populate the mimic-iv dataset to mysql databse.
--  Run script to populate the mimic-iv-node discharge notes to mongo
+-  Run script `scripts/load_mimic_note_to_mongo.py` to populate the mimic-iv-node discharge notes to mongo
+-  Run script `scripts/load_mimic_ecg_to_mongo.py` to populate the mimic-iv-ecg ECG machine_measurement to mongo
 - Run `pip install -r requirement.txt` to install the dependency
 - Run `streamlit run app.py -- --mysql-host YOUR_HOST --mysql-user YOUR_USER --mysql-password YOUR_PASSWORD --mongo-uri YOUR_MONGO_URI` to start the server
 
