@@ -24,6 +24,7 @@ from utils import (
 
 st.set_page_config(layout="wide", page_title="MIMIC-IV Patient Explorer")
 
+
 def get_ecg_base_directory() -> Optional[Path]:
     """Resolve the ECG base directory provided via command-line argument."""
     argument_value = get_arg_value("--ecg-base-folder")
@@ -69,6 +70,8 @@ if "sort_by" not in st.session_state:
     st.session_state.sort_by = "label"
 if "sort_ascending" not in st.session_state:
     st.session_state.sort_ascending = True
+if "default_items_initialized_for_hadm" not in st.session_state:
+    st.session_state.default_items_initialized_for_hadm = None
 
 
 # --- Helper Functions for App Logic ---
@@ -103,6 +106,28 @@ def handle_sort(column_name):
         st.session_state.sort_by = column_name
         st.session_state.sort_ascending = True
     st.session_state.page_number = 0
+
+
+def handle_admission_change():
+    reset_page_and_sort()
+    st.session_state.selected_items = []
+    st.session_state.default_items_initialized_for_hadm = None
+
+
+def initialize_default_items(item_types_df, hadm_id):
+    """Auto-select core items once per admission when available."""
+    if item_types_df.empty:
+        return
+    hadm_key = str(hadm_id)
+    if st.session_state.default_items_initialized_for_hadm == hadm_key:
+        return
+
+    for default_label in ["Heart Rate", "Heart Rhythm", "ECG"]:
+        matches = item_types_df[item_types_df["label"] == default_label]
+        if not matches.empty:
+            add_item_to_selection(matches.iloc[0].to_dict())
+
+    st.session_state.default_items_initialized_for_hadm = hadm_key
 
 
 def configure_chart_layout(figure, show_legend=False, left_margin=200):
@@ -150,10 +175,7 @@ if subject_id_input:
                 "Select Admission:",
                 admission_options,
                 format_func=admission_label,
-                on_change=lambda: [
-                    reset_page_and_sort(),
-                    st.session_state.update(selected_items=[]),
-                ],
+                on_change=handle_admission_change,
             )
 
             if selected_admission:
@@ -162,12 +184,8 @@ if subject_id_input:
                 st.header("Patient and Admission Details")
                 patient_info = get_patient_info(subject_id)
                 admission_info = get_admission_info(subject_id, selected_hadm_id)
-                admission_start_timestamp = pd.to_datetime(
-                    admission_info["admittime"]
-                )
-                admission_end_timestamp = pd.to_datetime(
-                    admission_info["dischtime"]
-                )
+                admission_start_timestamp = pd.to_datetime(admission_info["admittime"])
+                admission_end_timestamp = pd.to_datetime(admission_info["dischtime"])
                 services = get_admission_services(subject_id, selected_hadm_id)
 
                 col1, col2 = st.columns(2)
@@ -337,7 +355,9 @@ if subject_id_input:
                     admission_start_timestamp,
                     admission_end_timestamp,
                 )
+
                 if not item_types.empty:
+                    initialize_default_items(item_types, selected_hadm_id)
                     filter_cols = st.columns(3)
                     with filter_cols[0]:
                         filter_text = st.text_input(
@@ -514,11 +534,10 @@ if subject_id_input:
                                 event_data["ecg_time"] = pd.to_datetime(
                                     event_data["ecg_time"]
                                 )
-                                event_data = event_data.sort_values(
-                                    by="ecg_time"
-                                )
+                                event_data = event_data.sort_values(by="ecg_time")
                                 event_data["series_label"] = item["label"]
                                 if "text" in event_data.columns:
+
                                     def wrap_hover_text(value):
                                         if isinstance(value, str) and value.strip():
                                             wrapped_lines = textwrap.wrap(
@@ -596,15 +615,15 @@ if subject_id_input:
                                             timestamp_full = link_row.ecg_time.strftime(
                                                 "%Y-%m-%d %H:%M:%S"
                                             )
-                                            timestamp_label = link_row.ecg_time.strftime(
-                                                "%m-%d %H:%M"
+                                            timestamp_label = (
+                                                link_row.ecg_time.strftime(
+                                                    "%m-%d %H:%M"
+                                                )
                                             )
                                             study_identifier_formatted = (
                                                 f"{int(link_row.study_id):08d}"
                                             )
-                                            locator = (
-                                                f"ecg/p{subject_identifier_formatted}/s{study_identifier_formatted}"
-                                            )
+                                            locator = f"ecg/p{subject_identifier_formatted}/s{study_identifier_formatted}"
                                             label = f"[{timestamp_label}]"
                                             link_labels.append(
                                                 f'<a href="/?path={locator}" target="_blank" rel="noopener noreferrer" title="{timestamp_full}">'
