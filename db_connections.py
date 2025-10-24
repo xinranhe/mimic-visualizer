@@ -48,17 +48,23 @@ def _create_mysql_connection():
 
 def get_mysql_connection():
     """Return an active MySQL connection, reconnecting if necessary."""
+    def ensure_connection(connection_object):
+        """Verify connection liveliness and reconnect when needed."""
+        if connection_object is None:
+            return None
+        try:
+            connection_object.ping(reconnect=True, attempts=3, delay=2)
+            return connection_object
+        except (AttributeError, mysql.connector.Error):
+            return None
+
     connection = _create_mysql_connection()
-    if connection is None:
-        return None
+    connection = ensure_connection(connection)
+    if connection is not None:
+        return connection
 
-    try:
-        if not connection.is_connected():
-            connection.reconnect(attempts=3, delay=2)
-    except mysql.connector.Error:
-        _create_mysql_connection.clear()
-        connection = _create_mysql_connection()
-
+    _create_mysql_connection.clear()
+    connection = ensure_connection(_create_mysql_connection())
     return connection
 
 

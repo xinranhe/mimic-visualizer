@@ -64,6 +64,26 @@ def handle_sort(column_name):
     st.session_state.page_number = 0
 
 
+def configure_chart_layout(figure, show_legend=False, left_margin=200):
+    """Ensure consistent margins and legend placement so x-axes line up."""
+    layout_updates = dict(
+        margin=dict(l=left_margin, r=30, t=60, b=50),
+        margin_autoexpand=False,
+        legend=dict(
+            orientation="h",
+            yanchor="bottom",
+            y=1.02,
+            xanchor="left",
+            x=0,
+        ),
+        legend_title_text="",
+    )
+    if not show_legend:
+        layout_updates["showlegend"] = False
+    figure.update_layout(**layout_updates)
+    figure.update_yaxes(automargin=False)
+
+
 # --- Main App ---
 subject_id_input = st.text_input(
     "Enter subject_id:", "11360891", on_change=reset_page_and_sort
@@ -595,6 +615,7 @@ if subject_id_input:
                                                 line=dict(width=10),
                                                 hoverinfo="text",
                                                 text=hover_text,
+                                                showlegend=False,
                                             )
                                         )
                                     # Add custom title based on source table
@@ -616,6 +637,7 @@ if subject_id_input:
                                         hover_data=event_data.columns,
                                     )
 
+                            configure_chart_layout(fig)
                             fig.update_xaxes(range=[start_time, end_time])
                             st.plotly_chart(fig, use_container_width=True)
                         else:
