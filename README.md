@@ -14,7 +14,8 @@ The repo contains a visualizer that lets clinicians or researchers inspect indiv
 -  Run script `scripts/load_mimic_note_to_mongo.py` to populate the mimic-iv-node discharge notes to mongo
 -  Run script `scripts/load_mimic_ecg_to_mongo.py` to populate the mimic-iv-ecg ECG machine_measurement to mongo
 - Run `pip install -r requirement.txt` to install the dependency
-- Run `streamlit run app.py -- --mysql-host YOUR_HOST --mysql-user YOUR_USER --mysql-password YOUR_PASSWORD --mongo-uri YOUR_MONGO_URI` to start the server
+- Run `streamlit run app.py -- --mysql-host YOUR_HOST --mysql-user YOUR_USER --mysql-password YOUR_PASSWORD --mongo-uri YOUR_MONGO_URI --ecg-base-folder /path/to/mimic-ecg` to start the server. The ECG base folder should point to the directory that contains the `files/pNNNN/...` tree.
+- Open `http://localhost:8501/?path=ecg/pXXXXXXXX/sZZZZZZZZ` (replace with the subject and study identifiers) to view an ECG waveform. If you navigate to `?path=ecg` you can use the on-page input to enter a locator manually.
 
 ## Examples
 ![Screenshot 1](images/screenshot1.png)
