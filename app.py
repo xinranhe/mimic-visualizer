@@ -1,8 +1,14 @@
+from pathlib import Path
+from typing import Optional
+
 import streamlit as st
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 import textwrap
+
+from db_connections import get_arg_value
+from ecg_view import render_ecg_page
 from utils import (
     get_admissions,
     get_patient_info,
@@ -17,6 +23,40 @@ from utils import (
 )
 
 st.set_page_config(layout="wide", page_title="MIMIC-IV Patient Explorer")
+
+def get_ecg_base_directory() -> Optional[Path]:
+    """Resolve the ECG base directory provided via command-line argument."""
+    argument_value = get_arg_value("--ecg-base-folder")
+    if not argument_value:
+        return None
+    return Path(argument_value).expanduser()
+
+
+def _get_query_param_value(parameter_name: str) -> str:
+    """Return the first query parameter value for the provided name."""
+    query_params = getattr(st, "query_params", None)
+    if query_params is not None:
+        parameter_value = query_params.get(parameter_name, "")
+        if isinstance(parameter_value, list):
+            return parameter_value[0] if parameter_value else ""
+        return parameter_value or ""
+
+    parameters = st.experimental_get_query_params()
+    parameter_value = parameters.get(parameter_name)
+    if isinstance(parameter_value, list):
+        return parameter_value[0] if parameter_value else ""
+    if parameter_value is None:
+        return ""
+    return parameter_value
+
+
+_ecg_base_directory = get_ecg_base_directory()
+_requested_path = _get_query_param_value("path")
+if _requested_path:
+    _normalized_path = _requested_path.strip("/")
+    if _normalized_path.lower().startswith("ecg"):
+        render_ecg_page(_ecg_base_directory, _normalized_path)
+        st.stop()
 
 st.title("MIMIC-IV Patient Explorer 🩺")
 
@@ -490,23 +530,91 @@ if subject_id_input:
                                     event_data["text"] = event_data["text"].apply(
                                         wrap_hover_text
                                     )
-                                hover_columns = [
-                                    column
-                                    for column in event_data.columns
-                                    if column not in {"series_label"}
-                                ]
+                                event_data["hover_label"] = "ECG measurement"
+                                if "study_id" in event_data.columns:
+                                    subject_identifier_formatted = (
+                                        f"{int(subject_id):08d}"
+                                    )
+
+                                    def build_hover_label(row):
+                                        hover_lines = []
+                                        ecg_time_value = row.get("ecg_time")
+                                        if pd.notna(ecg_time_value):
+                                            hover_lines.append(
+                                                f"<b>ECG Time:</b> {ecg_time_value}"
+                                            )
+                                        text_value = row.get("text")
+                                        if (
+                                            isinstance(text_value, str)
+                                            and text_value.strip()
+                                        ):
+                                            hover_lines.append(
+                                                f"<b>Details:</b> {text_value}"
+                                            )
+                                        if not hover_lines:
+                                            return "ECG measurement"
+                                        return "<br>".join(hover_lines)
+
+                                    event_data["hover_label"] = event_data.apply(
+                                        build_hover_label, axis=1
+                                    )
+
                                 fig = px.scatter(
                                     event_data,
                                     x="ecg_time",
                                     y="series_label",
                                     title=f"ECG Scatter for {item['label']}",
-                                    hover_data=hover_columns,
+                                    custom_data=["hover_label"],
+                                    hover_data=[],
                                 )
                                 fig.update_traces(marker=dict(size=9))
+                                fig.update_traces(
+                                    hovertemplate="%{customdata[0]}<extra></extra>"
+                                )
                                 configure_chart_layout(fig)
                                 fig.update_xaxes(range=[start_time, end_time])
                                 fig.update_yaxes(title="")
                                 st.plotly_chart(fig, use_container_width=True)
+                                if "study_id" in event_data.columns:
+                                    link_rows = event_data.copy()
+                                    link_rows["ecg_time"] = pd.to_datetime(
+                                        link_rows["ecg_time"], errors="coerce"
+                                    )
+                                    link_rows["study_id"] = pd.to_numeric(
+                                        link_rows["study_id"], errors="coerce"
+                                    )
+                                    link_rows = link_rows.dropna(
+                                        subset=["ecg_time", "study_id"]
+                                    ).sort_values("ecg_time")
+                                    if not link_rows.empty:
+                                        st.markdown("**ECG Waveform Links**")
+                                        link_labels = []
+                                        subject_identifier_formatted = (
+                                            f"{int(subject_id):08d}"
+                                        )
+                                        for link_row in link_rows.itertuples():
+                                            timestamp_full = link_row.ecg_time.strftime(
+                                                "%Y-%m-%d %H:%M:%S"
+                                            )
+                                            timestamp_label = link_row.ecg_time.strftime(
+                                                "%m-%d %H:%M"
+                                            )
+                                            study_identifier_formatted = (
+                                                f"{int(link_row.study_id):08d}"
+                                            )
+                                            locator = (
+                                                f"ecg/p{subject_identifier_formatted}/s{study_identifier_formatted}"
+                                            )
+                                            label = f"[{timestamp_label}]"
+                                            link_labels.append(
+                                                f'<a href="/?path={locator}" target="_blank" rel="noopener noreferrer" title="{timestamp_full}">'
+                                                f"{label}"
+                                                "</a>"
+                                            )
+                                        st.markdown(
+                                            " ".join(link_labels),
+                                            unsafe_allow_html=True,
+                                        )
                                 st.write("---")
                                 continue
 
