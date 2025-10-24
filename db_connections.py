@@ -69,8 +69,8 @@ def get_mysql_connection():
 
 
 @st.cache_resource
-def get_mongo_connection():
-    """Establishes and returns a connection to the MongoDB database."""
+def _create_mongo_client():
+    """Create and cache a MongoDB client."""
     mongo_uri = get_arg_value("--mongo-uri")
 
     if not mongo_uri:
@@ -80,10 +80,35 @@ def get_mongo_connection():
         return None
 
     try:
-        client = MongoClient(mongo_uri)
-        db = client["mimiciv_note"]
-        return db
-    except Exception as e:
-        st.error(f"Error connecting to MongoDB: {e}")
+        mongo_client = MongoClient(mongo_uri)
+        mongo_client.admin.command("ping")
+        return mongo_client
+    except Exception as error:
+        st.error(f"Error connecting to MongoDB: {error}")
         st.warning("Please check your MongoDB connection URI.")
         return None
+
+
+def _get_mongo_database(database_name):
+    """Return a MongoDB database handle for the requested database name."""
+    mongo_client = _create_mongo_client()
+    if mongo_client is None:
+        return None
+
+    try:
+        return mongo_client[database_name]
+    except Exception as error:
+        st.error(f"Error accessing MongoDB database '{database_name}': {error}")
+        return None
+
+
+@st.cache_resource
+def get_mongo_connection():
+    """Return the MongoDB database used for clinical notes."""
+    return _get_mongo_database("mimiciv_note")
+
+
+@st.cache_resource
+def get_mongo_ecg_connection():
+    """Return the MongoDB database used for ECG machine measurements."""
+    return _get_mongo_database("mimiciv_ecg")

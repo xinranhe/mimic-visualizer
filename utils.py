@@ -1,5 +1,9 @@
 import pandas as pd
-from db_connections import get_mysql_connection, get_mongo_connection
+from db_connections import (
+    get_mysql_connection,
+    get_mongo_connection,
+    get_mongo_ecg_connection,
+)
 
 
 def get_admissions(subject_id):
@@ -123,8 +127,46 @@ def get_icd_procedures(subject_id, hadm_id):
     return pd.DataFrame()
 
 
-def get_item_types(subject_id, hadm_id):
-    """Lists all possible item types from ICU tables, lab events, and prescriptions for an admission."""
+def _get_ecg_measurements(subject_id, start_time=None, end_time=None):
+    """Fetch ECG machine measurements for a subject within a time window."""
+    mongo_database = get_mongo_ecg_connection()
+    if mongo_database is None:
+        return pd.DataFrame()
+
+    time_filters = {}
+    if start_time is not None and end_time is not None:
+        time_filters = {
+            "$gte": pd.to_datetime(start_time),
+            "$lte": pd.to_datetime(end_time),
+        }
+    elif start_time is not None:
+        time_filters = {"$gte": pd.to_datetime(start_time)}
+    elif end_time is not None:
+        time_filters = {"$lte": pd.to_datetime(end_time)}
+
+    query_filters = {"subject_id": subject_id}
+    if time_filters:
+        query_filters["ecg_time"] = time_filters
+
+    try:
+        measurement_collection = mongo_database.machine_measurement
+        cursor = measurement_collection.find(query_filters, {"_id": 0}).sort(
+            "ecg_time", 1
+        )
+        documents = list(cursor)
+    except Exception:
+        return pd.DataFrame()
+
+    if not documents:
+        return pd.DataFrame()
+
+    ecg_dataframe = pd.DataFrame(documents)
+    ecg_dataframe["ecg_time"] = pd.to_datetime(ecg_dataframe["ecg_time"])
+    return ecg_dataframe
+
+
+def get_item_types(subject_id, hadm_id, admission_start=None, admission_end=None):
+    """Lists all possible item types from ICU tables, lab events, prescriptions, and ECG data for an admission."""
     conn = get_mysql_connection()
     if conn is not None:
         # 1. Get ICU items from event tables
@@ -222,12 +264,36 @@ def get_item_types(subject_id, hadm_id):
         all_items = pd.concat(
             [icu_items, lab_items, prescription_items], ignore_index=True
         )
+
+        if admission_start is not None and admission_end is not None:
+            ecg_measurements = _get_ecg_measurements(
+                subject_id, admission_start, admission_end
+            )
+            if not ecg_measurements.empty:
+                ecg_item_identifier = "mimic_ecg_machine_measurement"
+                ecg_item = pd.DataFrame(
+                    [
+                        {
+                            "source_table": "ecgevents",
+                            "itemid": ecg_item_identifier,
+                            "label": "ECG",
+                            "abbreviation": "",
+                            "category": "MIMIC_ECG",
+                            "data_count": int(ecg_measurements.shape[0]),
+                        }
+                    ]
+                )
+                all_items = pd.concat([all_items, ecg_item], ignore_index=True)
+
         return all_items
     return pd.DataFrame()
 
 
 def get_event_data(subject_id, hadm_id, item_id, source_table, start_time, end_time):
     """Fetches event data for a specific item within a given time range."""
+    if source_table == "ecgevents":
+        return _get_ecg_measurements(subject_id, start_time, end_time)
+
     conn = get_mysql_connection()
     if conn is None:
         return pd.DataFrame()
